@@ -17,7 +17,6 @@ props.profiling_flags = ETWUtils::ProfilerFlags::BranchMispredictions
 props.repetitions = 10'000'000;
 props.name = "MispredictionBenchmark";
 props.warmup_cache = true;
-
 props.user_context = 30;
 
 CPUBench::Benchmark benchmark(benchmark_mispredicts, props);
