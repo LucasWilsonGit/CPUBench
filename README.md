@@ -4,6 +4,9 @@ A Windows 8+ Microbenchmarking library that does not require test signed drivers
 ## Requirements
 Windows 10 SDK
 
+## Compilation flags
+Make sure to enable full compiler optimizations, such as /O2 on MSVC or -O3 on gcc
+
 ## Example Usage
 ```C++
 
