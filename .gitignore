@@ -5,3 +5,4 @@
 *.user
 *.sln
 *.vcxproj*
+*/main.cpp
