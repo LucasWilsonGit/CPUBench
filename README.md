@@ -11,18 +11,15 @@ Make sure to enable full compiler optimizations, such as /O2 on MSVC or -O3 on g
 ```C++
 
 void benchmark_mispredicts(CPUBench::BenchmarkContext& context) {
+	//Intentionally similar to Google Benchmarking, set up necessary state and pass in anything via user_context
+	
 	volatile const char c{ 0 };
 	std::minstd_rand simple_random;
 	simple_random.seed(0xF00D);
 
-	auto val = 50;
-	try {
-		val = std::any_cast<int>(context.m_user_context);
-	}
-	catch (std::bad_any_cast& e) {
-		std::cout << e.what() << std::endl;
-	}
+	auto val = std::any_cast<int>(context.m_user_context);
 
+	//range style iteration to repeat the code to be microbenchmarked
 	for (auto _ : context) {
 		if (simple_random() % 100 > val) {
 			(void)c;
