@@ -10,6 +10,26 @@ Make sure to enable full compiler optimizations, such as /O2 on MSVC or -O3 on g
 ## Example Usage
 ```C++
 
+void benchmark_mispredicts(CPUBench::BenchmarkContext& context) {
+	volatile const char c{ 0 };
+	std::minstd_rand simple_random;
+	simple_random.seed(0xF00D);
+
+	auto val = 50;
+	try {
+		val = std::any_cast<int>(context.m_user_context);
+	}
+	catch (std::bad_any_cast& e) {
+		std::cout << e.what() << std::endl;
+	}
+
+	for (auto _ : context) {
+		if (simple_random() % 100 > val) {
+			(void)c;
+		}
+	}
+}
+
 CPUBench::BenchmarkProperties props{};
 props.profiling_flags = ETWUtils::ProfilerFlags::BranchMispredictions
 		| ETWUtils::ProfilerFlags::BranchInstructions
@@ -26,25 +46,25 @@ CPUBench::run_benchmarks();
 //load the result, set the logger to a custom logger that has the default behavior but also times the function and outputs the misprediction rate (%)
 auto& result = CPUBench::get_result("MispredictionBenchmark");
 result.set_logger([](CPUBench::BenchmarkResult& res) {
- CPUBench::default_logger(res); //start with default logger behavior 
+	CPUBench::default_logger(res); //start with default logger behavior 
  
- //add extra output based on counters we want to get
- unsigned int branches = 0;
- unsigned int mispredicts = 0;
- unsigned int core_cycles = 0; //will read unhalted core cycles
+	//add extra output based on counters we want to get
+	unsigned int branches = 0;
+	unsigned int mispredicts = 0;
+	unsigned int core_cycles = 0; //will read unhalted core cycles
  
- for (auto& counter : res.m_counters) {
-  if (counter.name == L"BranchInstructions")
-   branches = counter.value;
-  else if (counter.name == L"BranchMispredictions")
-   mispredicts = counter.value;
-  else if (counter.name == L"UnhaltedCoreCycles")
-   core_cycles = counter.value;
- }
+	for (auto& counter : res.m_counters) {
+		if (counter.name == L"BranchInstructions")
+			branches = counter.value;
+		else if (counter.name == L"BranchMispredictions")
+			mispredicts = counter.value;
+		else if (counter.name == L"UnhaltedCoreCycles")
+			core_cycles = counter.value;
+	}
   
- //float precis is fine, we are close to 1.0f
- std::cout << "Branch miss rate: " << mispredicts * 100.f / branches << "%\n";
- std::cout << "Unhalted core time: " << static_cast<double>(core_cycles) / (CPUBench::get_baseclock_mhz() * 1'000'000) << "s\n";
+	//float precis is fine, we are close to 1.0f
+	std::cout << "Branch miss rate: " << mispredicts * 100.f / branches << "%\n";
+	std::cout << "Unhalted core time: " << static_cast<double>(core_cycles) / (CPUBench::get_baseclock_mhz() * 1'000'000) << "s\n";
 });
 result.log();
 ```
