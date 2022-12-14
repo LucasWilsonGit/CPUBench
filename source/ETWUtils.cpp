@@ -475,6 +475,10 @@ void _enable_profilers(std::vector<ETWUtils::PMCCounter>& counters) {
 		//will just default to the MinInterval of the KE_PROFILESOURCE 
 		//usually 4096
 
+		if (counter.name == L"TimerFixed" || counter.name == L"Timer") {
+			interval.Interval = 10'000;
+		}
+
 		ULONG res = TraceSetInformation(
 			0,
 			TraceSampledProfileIntervalInfo,

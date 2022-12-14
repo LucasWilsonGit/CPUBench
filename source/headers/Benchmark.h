@@ -119,8 +119,10 @@ namespace CPUBench {
 		logger_func m_logger_fn;
 		const Benchmark& m_benchmark;
 	public:
-		BenchmarkResult(const Benchmark& benchmark);
 		std::vector<ETWUtils::PMCCounter> m_counters;
+		double m_duration_s;
+
+		BenchmarkResult(const Benchmark& benchmark, double duration_s);
 
 		void log();
 		void set_logger(const logger_func& fn);
