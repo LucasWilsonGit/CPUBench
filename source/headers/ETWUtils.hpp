@@ -29,6 +29,8 @@ extern "C" {
 #include <thread>
 #include <winternl.h>
 #include <iostream>
+#include <mutex>
+
 
 
 #define MAX_GUID_SIZE 39 //taken from https://learn.microsoft.com/en-us/windows/win32/etw/enumerating-providers
@@ -258,6 +260,8 @@ namespace ETWUtils {
 	extern bool session_running;
 	extern bool pause;
 
+	extern std::mutex tracing_mutex;
+
 	extern DWORD process_id;
 	//extern uint64_t interval;//https://www.geoffchappell.com/studies/windows/km/ntoskrnl/api/ex/profile/setinterval.htm
 
@@ -307,6 +311,7 @@ namespace ETWUtils {
 	//bool _start(ProfilerFlags flags) noexcept;
 	bool start(ProfilerFlags flags) noexcept;
 	void stop() noexcept;
+	double get_last_trace_duration() noexcept;
 }
 
 

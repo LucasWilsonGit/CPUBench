@@ -245,7 +245,6 @@ namespace CPUBench {
 	}
 	void Benchmark::run() noexcept {
 		//std::cout << std::hex << (uint32_t)m_context.m_profiling_flags << std::dec << "\n";
-		auto start = std::chrono::high_resolution_clock::now();
 
 		bool res = ETWUtils::start(m_context.m_profiling_flags);
 		if (res) {
@@ -255,9 +254,7 @@ namespace CPUBench {
 
 			ETWUtils::stop();
 
-			auto end = std::chrono::high_resolution_clock::now();
-			std::chrono::duration<double> duration = end - start;
-			duration -= std::chrono::duration<double>(0.5);
+			double duration = ETWUtils::get_last_trace_duration();
 
 			//pause + resume on BenchmarkContextIterand lifetime
 			//means the all of the overflow events get discarded
@@ -282,13 +279,13 @@ namespace CPUBench {
 
 			auto it = results.find(m_context.m_name);
 			if (it != results.end()) {
-				it->second.push_back(BenchmarkResult(*this, duration.count()));
+				it->second.push_back(BenchmarkResult(*this, duration));
 			}
 			else
 			{
 				results.emplace(
 					std::pair<std::string, std::vector<BenchmarkResult>>(
-						m_context.m_name, { BenchmarkResult(*this, duration.count()) }
+						m_context.m_name, { BenchmarkResult(*this, duration) }
 					)
 				);
 			}

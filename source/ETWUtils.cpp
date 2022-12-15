@@ -3,6 +3,7 @@
 #include "ETWUtils.hpp"
 #include <vector>
 #include <iostream>
+#include <chrono>
 
 //compilation unit locals
 std::unordered_map<DWORD, std::string> err_str_map( {
@@ -126,6 +127,13 @@ bool is_null_thread(const std::thread& t) {
 
 int interrupts = 0;
 
+std::mutex ETWUtils::tracing_mutex;
+std::atomic_bool trace_running;
+
+using high_res_clock = std::chrono::high_resolution_clock;
+std::chrono::time_point<high_res_clock> trace_start_time;
+std::chrono::time_point<high_res_clock> trace_end_time;
+
 void WINAPI record_event_callback(PEVENT_RECORD pEvent) noexcept {
 	//I only check GUID equals once so we can use the inline version to avoid some call overhead
 	if (!InlineIsEqualGUID(pEvent->EventHeader.ProviderId, perfinfo_guid)) {
@@ -139,8 +147,6 @@ void WINAPI record_event_callback(PEVENT_RECORD pEvent) noexcept {
 	switch (pEvent->EventHeader.EventDescriptor.Opcode) {
 		//https://github.com/microsoftarchive/bcl/blob/master/Tools/ETW/traceEvent/KernelTraceEventParser.cs
 		//you can find the relevent opcodes here
-		//they are also the low order word of the dwords here, so 71 is "NMI" which for me means "Never (gonna) Make It" cos I'm never gonna make it sadpepe
-		//https://github.com/processhacker/phnt/blob/master/ntexapi.h
 
 		//pEvent->EventHeader.ThreadId is the thread that generated the event
 		//this will be some kernel mode thread for the interrupts, so we have to read the ThreadId property from the event data 
@@ -165,6 +171,12 @@ void WINAPI record_event_callback(PEVENT_RECORD pEvent) noexcept {
 
 		case 73://CollectionStart
 		{
+			if (!trace_running.load()) {
+				trace_running = true;
+				trace_start_time = high_res_clock::now();
+				ETWUtils::tracing_mutex.unlock();
+			}
+
 			uint32_t source = ETWUtils::read_property<uint32_t>(pEvent, L"Source");
 			if (source == 0) {
 				//Something went wrong.
@@ -184,9 +196,10 @@ void WINAPI record_event_callback(PEVENT_RECORD pEvent) noexcept {
 
 			break;
 		}
+		//for some reason this event never gets parsed. I think stopping the trace externally means it gets orphaned
 		case 74://CollectionEnd
 			break;
-
+			
 		default:
 			break;
 	}
@@ -635,7 +648,9 @@ void ETWUtils::create_trace_session() {
 	});
 	//block the calling thread for a while, because otherwise the session can be stopped before the logger has started
 	//and this causes an error inside the ProcessTrace function (invalid handle) because the trace gets closed too quickly
-	Sleep(500);
+	
+	std::unique_lock lk(tracing_mutex);
+	//Sleep(500);
 
 
 	//do not detach
@@ -830,6 +845,30 @@ void ETWUtils::stop() noexcept {
 		session_handle = INVALID_PROCESSTRACE_HANDLE;
 		kernel_handle = INVALID_PROCESSTRACE_HANDLE;
 
+		if (trace_running.load()) {
+			ETWUtils::tracing_mutex.lock();
+			trace_end_time = high_res_clock::now();
+			trace_running = false;
+		}
+
 		//load_kernel_handle(init_kernel_properties()); //stops the kernel logger if it's already running so it can be reconfig'd
 	}
+}
+
+double ETWUtils::get_last_trace_duration() noexcept {
+	ETWUtils::pause = true;
+
+	const volatile char c{ 0 };
+	while (trace_running.load()) {
+		(void)c;
+	}
+
+	ETWUtils::pause = false;
+
+	std::chrono::duration<double> dur = (trace_end_time - trace_start_time);
+
+	
+
+	return dur.count();
+
 }
