@@ -280,9 +280,9 @@ namespace ETWUtils {
 		ULONG property_size;
 		TDHSTATUS res = TdhGetPropertySize(p_event_record, 0, nullptr, 1, &desc, &property_size);
 		if (res != ERROR_SUCCESS) {
-			std::cout << "read_property err1\n";
-			return 0;
-			//throw TraceBadResultException(res);
+			std::cout << "read_property err(" << res << ")\n";
+			//return 0;
+			throw TraceBadResultException(res);
 		}
 
 		constexpr uint8_t size = min(64, sizeof(T)); //align to at most 64 byte boundary

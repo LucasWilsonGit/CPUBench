@@ -24,6 +24,45 @@ std::thread ETWUtils::session_thread{ std::thread() }; //empty thread
 bool ETWUtils::session_running = false;
 bool ETWUtils::pause = false;
 
+int active_count{ 0 };
+int current_count{ 0 };
+
+void dump_event_info(PEVENT_RECORD pEvent) {
+	ULONG bufferSize = 0;
+	auto result = TdhGetEventInformation(pEvent, 0, nullptr, nullptr, &bufferSize);
+
+
+
+	std::vector<std::byte> buffer(bufferSize);
+	auto eventInfo = reinterpret_cast<PTRACE_EVENT_INFO>(buffer.data());
+
+	ULONG res = TdhGetEventInformation(pEvent, 0, nullptr, eventInfo, &bufferSize);
+	if (res != ERROR_SUCCESS) {
+		throw ETWUtils::TraceBadResultException(res);
+	}
+
+	auto opCode = pEvent->EventHeader.EventDescriptor.Opcode;
+	auto opCodeName = reinterpret_cast<const wchar_t*>(&buffer[eventInfo->OpcodeNameOffset]);
+	auto taskName = reinterpret_cast<const wchar_t*>(&buffer[eventInfo->TaskNameOffset]);
+	auto providerName = reinterpret_cast<const wchar_t*>(&buffer[eventInfo->ProviderNameOffset]);
+
+	std::wcout << "Task: " << taskName << std::endl;
+	std::wcout << "OpCode: " << opCodeName << " (" << opCode << ")" << std::endl;
+	std::wcout << "Provider: " << providerName << std::endl;
+
+	std::wcout << "Properties: ";
+
+	for (unsigned i = 0; i < eventInfo->TopLevelPropertyCount; ++i) {
+		EVENT_PROPERTY_INFO* propertyInfo = &eventInfo->EventPropertyInfoArray[i];
+
+		auto propertyName = reinterpret_cast<const wchar_t*>(&buffer[propertyInfo->NameOffset]);
+
+		std::wcout << propertyName << ",";
+	}
+
+	std::wcout << std::endl;
+}
+
 const std::string& _get_last_err_string() {
 	//Get the error message ID, if any.
 	DWORD errorMessageID = GetLastError();
@@ -151,8 +190,17 @@ void WINAPI record_event_callback(PEVENT_RECORD pEvent) noexcept {
 		//pEvent->EventHeader.ThreadId is the thread that generated the event
 		//this will be some kernel mode thread for the interrupts, so we have to read the ThreadId property from the event data 
 
+		//PMCSample
+		case 46: {
+			//dump_event_info(pEvent);
+			auto count = ETWUtils::read_property<uint64_t>(pEvent, L"Count");
+			//std::cout << count << std::endl;
+			break;
+		}
 		//PMCCounterProf 
 		case 47: {
+			//dump_event_info(pEvent);
+
 			auto tid = ETWUtils::read_property<uint32_t>(pEvent, L"ThreadId");
 			if (tid != benchmark_thread_id) {
 				return;
@@ -160,6 +208,8 @@ void WINAPI record_event_callback(PEVENT_RECORD pEvent) noexcept {
 
 			auto source = ETWUtils::read_property<uint32_t>(pEvent, L"ProfileSource");
 			auto& ref = ETWUtils::active_profile_sources.at(source);
+
+			//dump_event_info(pEvent);
 
 			ref.value += ref.interval;
 			
@@ -171,7 +221,9 @@ void WINAPI record_event_callback(PEVENT_RECORD pEvent) noexcept {
 
 		case 73://CollectionStart
 		{
-			if (!trace_running.load()) {
+			current_count += 1;
+			if (!trace_running.load() && current_count == active_count) {
+				std::cout << "start!\n";
 				trace_running = true;
 				trace_start_time = high_res_clock::now();
 				ETWUtils::tracing_mutex.unlock();
@@ -188,6 +240,8 @@ void WINAPI record_event_callback(PEVENT_RECORD pEvent) noexcept {
 			try {
 				auto& PMC = ETWUtils::active_profile_sources.at(source);
 				PMC.interval = interval;
+
+				std::wcout << PMC.name << ": " << PMC.interval << "\n";
 			}
 			catch (std::out_of_range e)
 			{
@@ -415,6 +469,9 @@ bool ETWUtils::init() {
 	query_performance_counters();
 	toggle_system_profiling(true);
 
+	//if its the first init, lock the mutex (that is the default, it unlocks when tracing starts)
+	tracing_mutex.try_lock();
+
 	return true;
 }
 
@@ -461,6 +518,9 @@ ETWUtils::PMCCounter& find_supported_PMC(const std::wstring& s) {
 }
 
 void _enable_profilers(std::vector<ETWUtils::PMCCounter>& counters) {
+	active_count = counters.size();
+	current_count = 0;
+
 	using namespace ETWUtils;
 	//was originally written as a ETWUtils:: member, but then moved out to be an internal method, so I could simplify the interface
 
@@ -649,7 +709,12 @@ void ETWUtils::create_trace_session() {
 	//block the calling thread for a while, because otherwise the session can be stopped before the logger has started
 	//and this causes an error inside the ProcessTrace function (invalid handle) because the trace gets closed too quickly
 	
-	std::unique_lock lk(tracing_mutex);
+	//throwaway thread that I can use to block until the mutex is released by the trace starting
+	std::thread t([]() {
+		std::unique_lock lk(tracing_mutex);
+	});
+	t.join();
+
 	//Sleep(500);
 
 
@@ -806,6 +871,8 @@ bool ETWUtils::start(ProfilerFlags flags) noexcept {
 
 //strong guarantee to stop the kernel logger
 void ETWUtils::stop() noexcept {
+	
+
 	if (!session_running) { 
 		//std::cout << "close existing kernel session" << std::endl;
 		try {
